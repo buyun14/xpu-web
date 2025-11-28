@@ -1,0 +1,190 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Intel XPU Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        .status-ok { color: green; }
+        .status-unknown { color: orange; }
+        .chart-container { width: 600px; height: 300px; margin: 20px 0; }
+        button { margin: 5px; padding: 8px 16px; }
+    </style>
+</head>
+<body>
+    <h1>Intel XPU Web Monitor</h1>
+
+    <!-- 设备列表 -->
+    <h2>GPU Devices</h2>
+    <table id="devices-table">
+        <thead><tr><th>ID</th><th>Name</th><th>PCI BDF</th><th>Status</th></tr></thead>
+        <tbody></tbody>
+    </table>
+
+    <!-- 实时统计 -->
+    <h2>Real-time Stats (Device 0)</h2>
+    <div id="stats-container"></div>
+
+    <!-- 健康状态 -->
+    <h2>Health Status</h2>
+    <div id="health-container"></div>
+
+    <!-- 控制面板 -->
+    <h2>Monitoring Control</h2>
+    <button onclick="startContinuousMonitor()">Start Continuous Monitor</button>
+    <button onclick="stopContinuousMonitor()">Stop Continuous Monitor</button>
+    <span id="monitor-status">Stopped</span>
+
+    <!-- 历史图表 -->
+    <h2>Historical Power & Temperature</h2>
+    <div class="chart-container">
+        <canvas id="historyChart"></canvas>
+    </div>
+
+    <script>
+        let monitorInterval = null;
+        const history = { timestamps: [], power: [], temp: [] };
+        let chart = null;
+
+        // 初始化图表
+        function initChart() {
+            const ctx = document.getElementById('historyChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: history.timestamps,
+                    datasets: [
+                        {
+                            label: 'Power (W)',
+                            data: history.power,
+                            borderColor: 'blue',
+                            fill: false
+                        },
+                        {
+                            label: 'Core Temp (°C)',
+                            data: history.temp,
+                            borderColor: 'red',
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: { display: true, title: { display: true, text: 'Time' } },
+                        y: { beginAtZero: false }
+                    }
+                }
+            });
+        }
+
+        // 获取设备列表
+        async function fetchDevices() {
+            const res = await fetch('/devices');
+            const data = await res.json();
+            const tbody = document.querySelector('#devices-table tbody');
+            tbody.innerHTML = '';
+            data.devices.forEach(d => {
+                const row = `<tr>
+                    <td>${d.device_id}</td>
+                    <td>${d.device_name}</td>
+                    <td>${d.pci_bdf_address}</td>
+                    <td class="status-ok">Online</td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+        }
+
+        // 获取实时 stats
+        async function fetchStats() {
+            const res = await fetch('/stats/0');
+            const data = await res.json();
+            const container = document.getElementById('stats-container');
+            let html = '<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>';
+            data.device_level.forEach(m => {
+                let value = m.value;
+                if (m.metrics_type === 'XPUM_STATS_POWER') value += ' W';
+                else if (m.metrics_type === 'XPUM_STATS_GPU_FREQUENCY') value += ' MHz';
+                else if (m.metrics_type === 'XPUM_STATS_GPU_CORE_TEMPERATURE') value += ' °C';
+                else if (m.metrics_type === 'XPUM_STATS_MEMORY_UTILIZATION') value += ' %';
+                html += `<tr><td>${m.metrics_type.replace('XPUM_STATS_', '').replace(/_/g, ' ')}</td><td>${value}</td></tr>`;
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // 获取健康状态
+        async function fetchHealth() {
+            const res = await fetch('/health/0');
+            const data = await res.json();
+            const container = document.getElementById('health-container');
+            let html = '<table><thead><tr><th>Component</th><th>Status</th><th>Description</th></tr></thead><tbody>';
+            for (const [key, val] of Object.entries(data)) {
+                if (key === 'device_id') continue;
+                const statusClass = val.status === 'OK' ? 'status-ok' : 'status-unknown';
+                html += `<tr><td>${key.replace(/_/g, ' ')}</td><td class="${statusClass}">${val.status}</td><td>${val.description || ''}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // 持续监控任务
+        function startContinuousMonitor() {
+            if (monitorInterval) return;
+            monitorInterval = setInterval(async () => {
+                await fetchStats();
+                await fetchHealth();
+
+                // 记录历史（仅保留最近 50 点）
+                const statsRes = await fetch('/stats/0');
+                const stats = await statsRes.json();
+                const now = new Date().toLocaleTimeString();
+                let power = 0, temp = 0;
+                stats.device_level.forEach(m => {
+                    if (m.metrics_type === 'XPUM_STATS_POWER') power = m.value;
+                    if (m.metrics_type === 'XPUM_STATS_GPU_CORE_TEMPERATURE') temp = m.value;
+                });
+
+                history.timestamps.push(now);
+                history.power.push(power);
+                history.temp.push(temp);
+
+                if (history.timestamps.length > 50) {
+                    history.timestamps.shift();
+                    history.power.shift();
+                    history.temp.shift();
+                }
+
+                if (chart) {
+                    chart.data.labels = history.timestamps;
+                    chart.data.datasets[0].data = history.power;
+                    chart.data.datasets[1].data = history.temp;
+                    chart.update();
+                }
+
+                document.getElementById('monitor-status').textContent = 'Running...';
+            }, 2000); // 每2秒刷新
+        }
+
+        function stopContinuousMonitor() {
+            if (monitorInterval) {
+                clearInterval(monitorInterval);
+                monitorInterval = null;
+                document.getElementById('monitor-status').textContent = 'Stopped';
+            }
+        }
+
+        // 初始化
+        window.onload = async () => {
+            initChart();
+            await fetchDevices();
+            await fetchStats();
+            await fetchHealth();
+        };
+    </script>
+</body>
+</html>
