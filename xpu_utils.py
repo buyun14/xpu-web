@@ -70,9 +70,13 @@ def get_health(device_id: str = "0") -> Dict[str, Any]:
 
 
 def get_processes(device_id: str = "0") -> Dict[str, Any]:
-    """获取正在使用 GPU 的进程信息（JSON）"""
-    output = run_xpu_cmd(["ps", "-d", device_id, "-j"])
-    try:
-        return json.loads(output) if output else {}
-    except json.JSONDecodeError:
-        return {}
+    """
+    获取正在使用 GPU 的进程信息（JSON）。
+
+    说明：由于某些驱动 / xpum 版本在执行 `xpumcli ps` 时会触发 xpumd 崩溃，
+    为避免影响系统稳定性，此功能当前已在 Web 端**禁用**，直接返回空结构。
+
+    如需重新启用，请确认 xpum 版本和驱动兼容性后，再恢复对 `xpumcli ps` 的调用。
+    """
+    logger.warning("get_processes is temporarily disabled to avoid xpumd crash on some drivers")
+    return {}

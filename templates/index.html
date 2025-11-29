@@ -39,9 +39,12 @@
     <h2 id="health-title">Health Status</h2>
     <div id="health-container"></div>
 
-    <!-- 进程列表 -->
-    <h2 id="process-title">GPU Processes</h2>
-    <div id="process-container"></div>
+    <!-- 进程列表（暂时禁用，避免触发 xpum 崩溃） -->
+    <h2 id="process-title">GPU Processes (temporarily disabled)</h2>
+    <div id="process-container">
+        <p id="process-disabled-text-en">Process monitoring is temporarily disabled to avoid xpum daemon crash on this driver.</p>
+        <p id="process-disabled-text-zh" class="hidden">由于驱动兼容性问题，进程监控功能已暂时关闭以避免 xpum 守护进程崩溃。</p>
+    </div>
 
     <!-- 控制面板 -->
     <h2 id="control-title">Monitoring Control</h2>
@@ -73,7 +76,7 @@
                 statusHeader: "Status",
                 statsTitle: "Real-time Stats",
                 healthTitle: "Health Status",
-                processTitle: "GPU Processes",
+                processTitle: "GPU Processes (temporarily disabled)",
                 controlTitle: "Monitoring Control",
                 startButton: "Start Continuous Monitor",
                 stopButton: "Stop Continuous Monitor",
@@ -99,7 +102,7 @@
                 statusHeader: "状态",
                 statsTitle: "实时统计信息",
                 healthTitle: "健康状态",
-                processTitle: "进程列表",
+                processTitle: "进程列表（暂时禁用）",
                 controlTitle: "监控控制",
                 startButton: "开始持续监控",
                 stopButton: "停止持续监控",
@@ -133,6 +136,9 @@
             document.getElementById('stats-title').textContent = `${t.statsTitle} (Device ${currentDeviceId})`;
             document.getElementById('health-title').textContent = t.healthTitle;
             document.getElementById('process-title').textContent = t.processTitle;
+            // 切换进程禁用提示语言
+            document.getElementById('process-disabled-text-en').classList.toggle('hidden', lang === 'zh');
+            document.getElementById('process-disabled-text-zh').classList.toggle('hidden', lang !== 'zh');
             document.getElementById('control-title').textContent = t.controlTitle;
             document.getElementById('start-button').textContent = t.startButton;
             document.getElementById('stop-button').textContent = t.stopButton;
@@ -142,7 +148,6 @@
             fetchDevices();
             fetchStats();
             fetchHealth();
-            fetchProcesses();
         }
 
         // 初始化图表
@@ -259,56 +264,12 @@
             container.innerHTML = html;
         }
 
-        // 获取进程列表（当前设备）
-        async function fetchProcesses() {
-            const res = await fetch(`/ps/${currentDeviceId}`);
-            const data = await res.json();
-            const container = document.getElementById('process-container');
-
-            // 兼容不同 JSON 结构：优先找常见字段，其次尝试直接当数组
-            let processes = [];
-            if (Array.isArray(data.process_list)) {
-                processes = data.process_list;
-            } else if (Array.isArray(data.processes)) {
-                processes = data.processes;
-            } else if (Array.isArray(data)) {
-                processes = data;
-            }
-
-            if (!processes.length) {
-                container.innerHTML = currentLanguage === 'zh'
-                    ? '<p>当前设备没有正在使用 GPU 的进程。</p>'
-                    : '<p>No GPU processes are running on the current device.</p>';
-                return;
-            }
-
-            // 动态根据返回字段生成表头/表格，保证与 xpumcli JSON 对齐
-            const keys = Object.keys(processes[0]);
-            let html = '<table><thead><tr>';
-            keys.forEach(k => {
-                html += `<th>${k}</th>`;
-            });
-            html += '</tr></thead><tbody>';
-
-            processes.forEach(p => {
-                html += '<tr>';
-                keys.forEach(k => {
-                    html += `<td>${p[k]}</td>`;
-                });
-                html += '</tr>';
-            });
-
-            html += '</tbody></table>';
-            container.innerHTML = html;
-        }
-
         // 持续监控任务
         function startContinuousMonitor() {
             if (monitorInterval) return;
             monitorInterval = setInterval(async () => {
                 await fetchStats();
                 await fetchHealth();
-                await fetchProcesses();
 
                 // 记录历史（仅保留最近 50 点）
                 const statsRes = await fetch(`/stats/${currentDeviceId}`);
@@ -361,7 +322,6 @@
             await fetchDevices();
             await fetchStats();
             await fetchHealth();
-            await fetchProcesses();
         };
     </script>
 </body>
