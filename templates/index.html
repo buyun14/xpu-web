@@ -39,6 +39,10 @@
     <h2 id="health-title">Health Status</h2>
     <div id="health-container"></div>
 
+    <!-- 进程列表 -->
+    <h2 id="process-title">GPU Processes</h2>
+    <div id="process-container"></div>
+
     <!-- 控制面板 -->
     <h2 id="control-title">Monitoring Control</h2>
     <button id="start-button" onclick="startContinuousMonitor()">Start Continuous Monitor</button>
@@ -56,6 +60,7 @@
         const history = { timestamps: [], power: [], temp: [] };
         let chart = null;
         let currentLanguage = 'en';
+        let currentDeviceId = 0; // 当前选中的设备 ID，默认 0
 
         // Language translations
         const translations = {
@@ -66,8 +71,9 @@
                 nameHeader: "Name",
                 pciHeader: "PCI BDF",
                 statusHeader: "Status",
-                statsTitle: "Real-time Stats (Device 0)",
+                statsTitle: "Real-time Stats",
                 healthTitle: "Health Status",
+                processTitle: "GPU Processes",
                 controlTitle: "Monitoring Control",
                 startButton: "Start Continuous Monitor",
                 stopButton: "Stop Continuous Monitor",
@@ -91,8 +97,9 @@
                 nameHeader: "设备名称",
                 pciHeader: "PCI BDF 地址",
                 statusHeader: "状态",
-                statsTitle: "实时统计信息 (设备 0)",
+                statsTitle: "实时统计信息",
                 healthTitle: "健康状态",
+                processTitle: "进程列表",
                 controlTitle: "监控控制",
                 startButton: "开始持续监控",
                 stopButton: "停止持续监控",
@@ -123,8 +130,9 @@
             document.getElementById('name-header').textContent = t.nameHeader;
             document.getElementById('pci-header').textContent = t.pciHeader;
             document.getElementById('status-header').textContent = t.statusHeader;
-            document.getElementById('stats-title').textContent = t.statsTitle;
+            document.getElementById('stats-title').textContent = `${t.statsTitle} (Device ${currentDeviceId})`;
             document.getElementById('health-title').textContent = t.healthTitle;
+            document.getElementById('process-title').textContent = t.processTitle;
             document.getElementById('control-title').textContent = t.controlTitle;
             document.getElementById('start-button').textContent = t.startButton;
             document.getElementById('stop-button').textContent = t.stopButton;
@@ -134,6 +142,7 @@
             fetchDevices();
             fetchStats();
             fetchHealth();
+            fetchProcesses();
         }
 
         // 初始化图表
@@ -174,6 +183,15 @@
             });
         }
 
+        // 切换当前监控的设备
+        function selectDevice(deviceId) {
+            currentDeviceId = deviceId;
+            const t = translations[currentLanguage];
+            document.getElementById('stats-title').textContent = `${t.statsTitle} (Device ${currentDeviceId})`;
+            fetchStats();
+            fetchHealth();
+        }
+
         // 获取设备列表
         async function fetchDevices() {
             const res = await fetch('/devices');
@@ -182,7 +200,7 @@
             tbody.innerHTML = '';
             const t = translations[currentLanguage];
             data.devices.forEach(d => {
-                const row = `<tr>
+                const row = `<tr onclick="selectDevice(${d.device_id})" style="cursor: pointer;">
                     <td>${d.device_id}</td>
                     <td>${d.device_name}</td>
                     <td>${d.pci_bdf_address}</td>
@@ -192,9 +210,9 @@
             });
         }
 
-        // 获取实时 stats
+        // 获取实时 stats（当前设备）
         async function fetchStats() {
-            const res = await fetch('/stats/0');
+            const res = await fetch(`/stats/${currentDeviceId}`);
             const data = await res.json();
             const container = document.getElementById('stats-container');
             const t = translations[currentLanguage];
@@ -224,9 +242,9 @@
             container.innerHTML = html;
         }
 
-        // 获取健康状态
+        // 获取健康状态（当前设备）
         async function fetchHealth() {
-            const res = await fetch('/health/0');
+            const res = await fetch(`/health/${currentDeviceId}`);
             const data = await res.json();
             const container = document.getElementById('health-container');
             const t = translations[currentLanguage];
@@ -241,15 +259,59 @@
             container.innerHTML = html;
         }
 
+        // 获取进程列表（当前设备）
+        async function fetchProcesses() {
+            const res = await fetch(`/ps/${currentDeviceId}`);
+            const data = await res.json();
+            const container = document.getElementById('process-container');
+
+            // 兼容不同 JSON 结构：优先找常见字段，其次尝试直接当数组
+            let processes = [];
+            if (Array.isArray(data.process_list)) {
+                processes = data.process_list;
+            } else if (Array.isArray(data.processes)) {
+                processes = data.processes;
+            } else if (Array.isArray(data)) {
+                processes = data;
+            }
+
+            if (!processes.length) {
+                container.innerHTML = currentLanguage === 'zh'
+                    ? '<p>当前设备没有正在使用 GPU 的进程。</p>'
+                    : '<p>No GPU processes are running on the current device.</p>';
+                return;
+            }
+
+            // 动态根据返回字段生成表头/表格，保证与 xpumcli JSON 对齐
+            const keys = Object.keys(processes[0]);
+            let html = '<table><thead><tr>';
+            keys.forEach(k => {
+                html += `<th>${k}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            processes.forEach(p => {
+                html += '<tr>';
+                keys.forEach(k => {
+                    html += `<td>${p[k]}</td>`;
+                });
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
         // 持续监控任务
         function startContinuousMonitor() {
             if (monitorInterval) return;
             monitorInterval = setInterval(async () => {
                 await fetchStats();
                 await fetchHealth();
+                await fetchProcesses();
 
                 // 记录历史（仅保留最近 50 点）
-                const statsRes = await fetch('/stats/0');
+                const statsRes = await fetch(`/stats/${currentDeviceId}`);
                 const stats = await statsRes.json();
                 const now = new Date().toLocaleTimeString();
                 let power = 0, temp = 0;
@@ -299,6 +361,7 @@
             await fetchDevices();
             await fetchStats();
             await fetchHealth();
+            await fetchProcesses();
         };
     </script>
 </body>

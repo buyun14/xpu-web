@@ -3,12 +3,12 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from xpu_utils import get_devices, get_stats, get_health
+from xpu_utils import get_devices, get_stats, get_health, get_processes
 
 app = FastAPI(
     title="Intel XPU Web Monitor",
     description="Web interface for Intel XPU Manager / xpu-smi based on FastAPI",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 # 模板设置
@@ -38,3 +38,12 @@ async def device_health(device_id: str):
     if not health:
         raise HTTPException(status_code=404, detail=f"Health info for device {device_id} not available")
     return health
+
+
+@app.get("/ps/{device_id}")
+async def device_processes(device_id: str):
+    """获取指定设备上正在使用 GPU 的进程列表"""
+    processes = get_processes(device_id)
+    if not processes:
+        raise HTTPException(status_code=404, detail=f"Process info for device {device_id} not available")
+    return processes

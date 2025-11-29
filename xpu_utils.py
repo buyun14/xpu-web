@@ -67,3 +67,12 @@ def get_health(device_id: str = "0") -> Dict[str, Any]:
         return json.loads(output) if output else {}
     except json.JSONDecodeError:
         return {}
+
+
+def get_processes(device_id: str = "0") -> Dict[str, Any]:
+    """获取正在使用 GPU 的进程信息（JSON）"""
+    output = run_xpu_cmd(["ps", "-d", device_id, "-j"])
+    try:
+        return json.loads(output) if output else {}
+    except json.JSONDecodeError:
+        return {}
