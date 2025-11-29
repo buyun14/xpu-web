@@ -1,14 +1,14 @@
 # main.py (更新版)
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+
 from xpu_utils import get_devices, get_stats, get_health
 
 app = FastAPI(
     title="Intel XPU Web Monitor",
-    description="Web interface for xpu-smi based on FastAPI",
-    version="0.1.0"
+    description="Web interface for Intel XPU Manager / xpu-smi based on FastAPI",
+    version="0.2.0",
 )
 
 # 模板设置
